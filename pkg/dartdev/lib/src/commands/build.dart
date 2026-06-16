@@ -16,10 +16,13 @@ import 'package:dartdev/src/sdk.dart';
 import 'package:front_end/src/api_prototype/compiler_options.dart'
     show Verbosity;
 import 'package:hooks_runner/hooks_runner.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import '../core.dart';
 import '../native_assets.dart';
+import '../sdk_cache.dart';
+import '../unified_analytics.dart';
 
 class BuildCommand extends DartdevCommand {
   static const String cmdName = 'build';
@@ -59,7 +62,6 @@ class BuildCliSubcommand extends CompileSubcommandCommand {
 
   static const String cmdName = 'cli';
 
-  static final OS targetOS = OS.current;
   late final List<File> entryPoints;
 
   final bool dataAssetsExperimentEnabled;
@@ -162,6 +164,16 @@ then that is used instead.''',
         defaultsTo: 'none',
       )
       ..addOption(
+        'target-os',
+        help: 'Cross-compile to a specific target operating system',
+        allowed: OS.values.map((v) => v.name).toList(),
+      )
+      ..addOption(
+        'target-arch',
+        help: 'Cross-compile to a specific target architecture.',
+        allowed: Architecture.values.map((v) => v.name).toList(),
+      )
+      ..addOption(
         'root-package',
         help:
             'The package for which hooks are run (including its transitive '
@@ -217,9 +229,13 @@ then that is used instead.''',
       return genericErrorExitCode;
     }
 
+    final crossTarget = _crossCompilationTarget();
+    final outputPath = (!args.wasParsed('output') && crossTarget != null)
+        ? 'build/cli/${crossTarget.os}_${crossTarget.architecture}/'
+        : (args.option('output') ??
+              sourceUri.toFilePath().removeDotDart().makeFolder());
     final outputUri = Uri.directory(
-      args.option('output')?.normalizeCanonicalizePath().makeFolder() ??
-          sourceUri.toFilePath().removeDotDart().makeFolder(),
+      outputPath.normalizeCanonicalizePath().makeFolder(),
     );
     if (await File.fromUri(outputUri.resolve('pubspec.yaml')).exists()) {
       stderr.writeln("'dart build' refuses to delete your project.");
@@ -265,6 +281,7 @@ then that is used instead.''',
       depFile: depFile,
       sanitizer: sanitizer,
       runPackageName: args.option('root-package'),
+      target: _crossCompilationTarget(),
     );
   }
 
@@ -282,7 +299,55 @@ then that is used instead.''',
     bool progressUpdatesOnStderr = false,
     String? depFile,
     String? runPackageName,
+    Target? target,
   }) async {
+    final targetOS = (target ?? Target.current).os;
+
+    // The Dart AOT toolchain. For a cross target, download the matching
+    // gen_snapshot + dartaotruntime (mirrors `dart compile exe`), since the
+    // host gen_snapshot can only emit code for the host platform.
+    var genSnapshotBinary = sdk.genSnapshot;
+    var dartAotRuntimeBinary = sdk.dartAotRuntimeFor(sanitizer: sanitizer.name);
+    if (target != null) {
+      if (!CompileNativeCommand.supportedTargetPlatforms.contains(target)) {
+        stderr.writeln('Unsupported target platform $target.');
+        stderr.writeln(
+          'Supported target platforms: '
+          '${CompileNativeCommand.supportedTargetPlatforms.join(', ')}',
+        );
+        return 255;
+      }
+      var cacheDir = getDartStorageDirectory();
+      if (cacheDir != null) {
+        cacheDir = Directory(path.join(cacheDir.path, 'dartdev', 'sdk_cache'));
+      } else {
+        cacheDir = Directory.systemTemp.createTempSync();
+      }
+      final httpClient = http.Client();
+      try {
+        final cache = SdkCache(
+          directory: cacheDir.path,
+          verbose: verbose,
+          httpClient: httpClient,
+        );
+        final archiveFolder = await cache.resolveVersion(
+          version: Runtime.runtime.version,
+          revision: sdk.revision ?? '',
+          channelName: Runtime.runtime.channel ?? 'unknown',
+        );
+        genSnapshotBinary = await cache.ensureGenSnapshot(
+          archiveFolder: archiveFolder,
+          target: target,
+        );
+        dartAotRuntimeBinary = await cache.ensureDartAotRuntime(
+          archiveFolder: archiveFolder,
+          target: target,
+        );
+      } finally {
+        httpClient.close();
+      }
+    }
+
     if (executables.length >= 2) {
       if (recordUseEnabled) {
         // Multiple entry points can lead to multiple different tree-shakings.
@@ -371,6 +436,7 @@ then that is used instead.''',
       dataAssetsExperimentEnabled: dataAssetsExperimentEnabled,
       progressUpdatesOnStderr: progressUpdatesOnStderr,
       sanitizer: sanitizer,
+      target: target,
     );
     final showProgress = verbosity != Verbosity.error.name;
     BuildResult? buildResult;
@@ -409,10 +475,8 @@ then that is used instead.''',
           targetOS.executableFileName(e.name),
         );
         final generator = KernelGenerator(
-          genSnapshot: sdk.genSnapshot,
-          targetDartAotRuntime: sdk.dartAotRuntimeFor(
-            sanitizer: sanitizer.name,
-          ),
+          genSnapshot: genSnapshotBinary,
+          targetDartAotRuntime: dartAotRuntimeBinary,
           kind: Kind.exe,
           sourceFile: e.sourceEntryPoint.toFilePath(),
           outputFile: outputExeUri.toFilePath(),
@@ -513,6 +577,21 @@ Use linkMode as dynamic library instead.""",
       await tempDir.delete(recursive: true);
     }
     return 0;
+  }
+
+  Target? _crossCompilationTarget() {
+    final args = argResults!;
+    final targetOS = args.option('target-os');
+    final targetArch = args.option('target-arch');
+    if (targetOS == null && targetArch == null) return null;
+    final host = Target.current;
+    final target = Target.fromArchitectureAndOS(
+      targetArch == null
+          ? host.architecture
+          : Architecture.fromString(targetArch),
+      targetOS == null ? host.os : OS.fromString(targetOS),
+    );
+    return host == target ? null : target;
   }
 }
 
