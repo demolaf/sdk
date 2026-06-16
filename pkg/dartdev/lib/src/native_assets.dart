@@ -261,6 +261,36 @@ class DartNativeAssetsBuilder {
             : null,
       );
     }
+
+    if (targetOS == OS.linux && OS.current != OS.linux) {
+      // use the SDK's own bundled (Fuchsia) clang + a CIPD-fetched
+      // Linux sysroot. Paths are derived from the running
+      // SDK's location in the source checkout. NOTE: buildtools/ is not shipped
+      // in a released SDK — a real implementation would fetch clang + sysroot
+      // into a cache (like gen_snapshot), not read the build tree.
+      final sdkRepo = File(Platform.resolvedExecutable)
+          .parent
+          .parent
+          .parent
+          .parent
+          .parent
+          .path; // <repo>/sdk
+      final hostDir =
+          'mac-${Architecture.current == Architecture.arm64 ? 'arm64' : 'x64'}';
+      final clang = '$sdkRepo/buildtools/$hostDir/clang/bin/clang';
+      final sysroot = '$sdkRepo/buildtools/sysroot/focal';
+      final dir = Directory.systemTemp.createTempSync('dartdev_clang_');
+      final wrapper = File.fromUri(dir.uri.resolve('clang'));
+      wrapper.writeAsStringSync(
+        '#!/bin/sh\nexec "$clang" --sysroot="$sysroot" -fuse-ld=lld "\$@"\n',
+      );
+      Process.runSync('chmod', ['755', wrapper.path]);
+      return CCompilerConfig(
+        compiler: wrapper.uri,
+        archiver: wrapper.uri,
+        linker: wrapper.uri,
+      );
+    }
     return null;
   }
 
