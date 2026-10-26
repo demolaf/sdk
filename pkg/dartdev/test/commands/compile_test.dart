@@ -191,6 +191,17 @@ void defineCompileTests() {
     expect(result.exitCode, 0);
   });
 
+  test('exe --help', () async {
+    final p = project();
+    final result = await p.run(['compile', 'exe', '--help']);
+    expect(result.stdout, contains('dart compile exe -Da=1,b=2 main.dart'));
+    expect(
+      result.stdout,
+      contains('dart compile exe --packages=/tmp/pkgs.json main.dart'),
+    );
+    expect(result.exitCode, 0);
+  });
+
   test('Compile and run jit snapshot', () async {
     final p = project(mainSrc: 'void main() { print("I love jit"); }');
     final outFile = path.join(p.dirPath, 'main.jit');

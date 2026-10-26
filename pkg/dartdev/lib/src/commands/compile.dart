@@ -1125,7 +1125,7 @@ Sets the verbosity level of the compilation.
     valueHelp: 'key=value',
     help: '''
 Define an environment declaration. To specify multiple declarations, use multiple options or use commas to separate key-value pairs.
-For example: dart compile $name -Da=1,b=2 main.dart''',
+For example: ${helpExample('-Da=1,b=2')}''',
   );
 
   late final Option packagesOption = Option(
@@ -1135,8 +1135,11 @@ For example: dart compile $name -Da=1,b=2 main.dart''',
     help:
         '''Get package locations from the specified file instead of .dart_tool/package_config.json.
 <path> can be relative or absolute.
-For example: dart compile $name --packages=/tmp/pkgs.json main.dart''',
+For example: ${helpExample('--packages=/tmp/pkgs.json')}''',
   );
+
+  /// An example command line using [options], shown in option help text.
+  String helpExample(String options) => 'dart compile $name $options main.dart';
 
   final Option enableAssertsOption = Option(
     flag: 'enable-asserts',
