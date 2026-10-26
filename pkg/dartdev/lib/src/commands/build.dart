@@ -149,6 +149,14 @@ then that is used instead.''',
         negatable: false,
         help: enableAssertsOption.help,
       )
+      ..addMultiOption(
+        defineOption.flag,
+        abbr: defineOption.abbr,
+        valueHelp: defineOption.valueHelp,
+        help: '''
+Define an environment declaration. To specify multiple declarations, use multiple options or use commas to separate key-value pairs.
+For example: dart build cli -Da=1,b=2''',
+      )
       ..addOption(
         'verbosity',
         help: 'Sets the verbosity level of the compilation.',
@@ -280,6 +288,7 @@ then that is used instead.''',
     final depFile = args.option('depfile');
     final enabledExperiments = args.enabledExperiments;
     final enableAsserts = args.flag(enableAssertsOption.flag);
+    final defines = args.multiOption(defineOption.flag);
 
     Uri? packageConfigUri;
     final packages = args.option(packagesOption.flag);
@@ -314,6 +323,7 @@ then that is used instead.''',
       verbose: verbose,
       verbosity: verbosity,
       enableAsserts: enableAsserts,
+      defines: defines,
       depFile: depFile,
       sanitizer: sanitizer,
       runPackageName: args.option('root-package'),
@@ -340,6 +350,7 @@ then that is used instead.''',
     required String verbosity,
     bool logGenerated = true,
     bool enableAsserts = false,
+    List<String> defines = const [],
     Sanitizer sanitizer = Sanitizer.none,
     String? depFile,
     String? runPackageName,
@@ -513,7 +524,7 @@ then that is used instead.''',
             outputFile: (outputSnapshotUri ?? outputExeUri).toFilePath(),
             verbose: verbose,
             verbosity: verbosity,
-            defines: [...sanitizer.defines],
+            defines: [...sanitizer.defines, ...defines],
             packages: packageConfigUri.toFilePath(),
             targetOS: targetOS,
             enableExperiment: enabledExperiments.join(','),
