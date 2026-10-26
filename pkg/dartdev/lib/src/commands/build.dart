@@ -77,6 +77,9 @@ class BuildCliSubcommand extends CompileSubcommandCommand {
         .replaceAll(' [arguments]', '');
   }
 
+  @override
+  String helpExample(String options) => 'dart build $name $options';
+
   BuildCliSubcommand({
     bool verbose = false,
     required this.recordUseEnabled,

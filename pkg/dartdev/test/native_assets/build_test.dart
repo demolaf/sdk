@@ -511,6 +511,15 @@ void main(List<String> args) {
     });
   });
 
+  test('dart build cli --help', () async {
+    final result = await runDart(
+      arguments: ['build', 'cli', '--help'],
+      logger: logger,
+    );
+    expect(result.stdout, contains('dart build cli --packages=/tmp/pkgs.json'));
+    expect(result.stdout, isNot(contains('dart compile cli')));
+  });
+
   test('dart build cli --enable-asserts', timeout: longTimeout, () async {
     await nativeAssetsTest('dart_app', (dartAppUri) async {
       final binFile = File.fromUri(dartAppUri.resolve('bin/dart_app.dart'));
